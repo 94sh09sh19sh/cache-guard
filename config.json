@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "keepWarm": true,
+  "minContextTokens": 50000,
+  "wakeAfterSec1h": 3300,
+  "maxPings1h": 8,
+  "wakeAfterSec5m": 240,
+  "maxPings5m": 6,
+  "maxUsagePct": 90,
+  "imageWarnAt": [30, 50],
+  "debug": false
+}

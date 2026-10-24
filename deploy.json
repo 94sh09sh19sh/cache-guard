@@ -1,0 +1,10 @@
+{
+  "target": "cache-guard",
+  "hooks": [
+    { "event": "Stop", "script": "hook.js", "timeout": 3600, "asyncRewake": true },
+    { "event": "PostToolUse", "matcher": "Read|mcp__.*", "script": "hook.js", "timeout": 10 },
+    { "event": "SessionStart", "matcher": "compact|clear", "script": "hook.js", "timeout": 10 }
+  ],
+  "exclude": ["test.js"],
+  "test": "node test.js"
+}
