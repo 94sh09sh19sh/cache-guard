@@ -8,20 +8,11 @@ const TRY_MSG = 'cache-guard 喚醒測試（不是使用者訊息）：asyncRewa
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 回覆最後一行是問句，代表在等使用者決定
-function asksUser(text) {
-  const lines = String(text || '').trim().split('\n');
-  return /[?？]$/.test(lines[lines.length - 1].replace(/[\s*_`」』）)]+$/, ''));
-}
-
-// 這個 session 還在等什麼；工作已做完回傳 null。Stop 的輸入直接列出進行中的背景工作與排程
-function waitReason(input, prev, isPing, cfg) {
+// 這個 session 還在等什麼；工作已做完（包括停下來問使用者）回傳 null。Stop 的輸入直接列出進行中的背景工作與排程
+function waitReason(input, cfg) {
   const tasks = (input.background_tasks || []).filter((t) => !cfg.ignoreTaskTypes.includes(t.type));
   if (tasks.length) return `等背景工作（${[...new Set(tasks.map((t) => t.type))].join('、')}）`;
   if ((input.session_crons || []).length) return '等計時器';
-  if (cfg.warmOnQuestion && asksUser(input.last_assistant_message)) return '等使用者回答';
-  // 保溫那一輪只回「.」，看不出原本在等什麼，沿用上一輪的判斷
-  if (isPing && prev.wait === '等使用者回答') return prev.wait;
   return null;
 }
 
@@ -41,7 +32,7 @@ async function onStop(input, cfg) {
   const isPing = Boolean(prev.wokeAt) && Date.now() - prev.wokeAt < 10 * 60e3 && (input.stop_hook_active || reply.length <= 20);
   const pings = isPing ? prev.pings || 0 : 0;
   const owner = `${process.pid}-${Date.now()}`;
-  const wait = waitReason(input, prev, isPing, cfg);
+  const wait = waitReason(input, cfg);
   const st = { owner, tier, pings, wokeAt: isPing ? prev.wokeAt : 0, anchor: last.anchor, ctx: last.ctx, wait, updatedAt: Date.now() };
   L.writeJson(L.warmFile(sid), st);
 
@@ -159,4 +150,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { countImages, onPostToolUse, asksUser, waitReason, WAKE_MSG };
+module.exports = { countImages, onPostToolUse, waitReason, WAKE_MSG };

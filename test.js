@@ -105,32 +105,20 @@ async function test(name, fn) {
     assert.strictEqual((await p).code, 2);
   });
 
-  await test('工作已完成（沒有背景工作、計時器，也沒問問題）不保溫', async () => {
+  await test('工作已完成（沒有背景工作、計時器）不保溫，停下來問使用者也不保溫', async () => {
     const r = await run({ session_id: 'done', transcript_path: transcript('done', { ageSec: 3298 }), background_tasks: [], session_crons: [], last_assistant_message: '已修好並推上 GitHub。' });
     assert.strictEqual(r.code, 0);
     assert.strictEqual(L.readJson(L.warmFile('done')).wait, null);
     // Claude Code 內部的背景工作不算在等
     const r2 = await run({ session_id: 'done', transcript_path: transcript('done', { ageSec: 3298 }), background_tasks: [{ ...BG, type: 'dream' }] });
     assert.strictEqual(r2.code, 0);
+    const r3 = await run({ session_id: 'done', transcript_path: transcript('done', { ageSec: 3298 }), background_tasks: [], last_assistant_message: '要我照這個方式改 `cache-guard` 嗎？' });
+    assert.strictEqual(r3.code, 0);
   });
 
-  await test('等計時器、等使用者回答都保溫', async () => {
+  await test('等計時器要保溫', async () => {
     const cron = await run({ session_id: 'cron', transcript_path: transcript('cron', { ageSec: 3298 }), background_tasks: [], session_crons: [{ id: 'c1', schedule: '0 9 * * *', recurring: true, prompt: 'x' }] });
     assert.strictEqual(cron.code, 2, cron.err);
-    const tp = transcript('ask', { ageSec: 3298 });
-    const ask = await run({ session_id: 'ask', transcript_path: tp, background_tasks: [], last_assistant_message: '兩個做法。\n\n要我照這個方式改 `cache-guard` 嗎？' });
-    assert.strictEqual(ask.code, 2, ask.err);
-    // 保溫那一輪只回「.」，要沿用「等使用者回答」繼續保溫
-    const again = await run({ session_id: 'ask', transcript_path: tp, background_tasks: [], stop_hook_active: true, last_assistant_message: '.' });
-    assert.strictEqual(again.code, 2, again.err);
-    assert.strictEqual(L.readJson(L.warmFile('ask')).pings, 2);
-  });
-
-  await test('判斷問句：只看最後一行', () => {
-    assert.ok(H.asksUser('要我改嗎？'));
-    assert.ok(H.asksUser('Should I push?**'));
-    assert.ok(!H.asksUser('為什麼會這樣？\n\n已經修好了。'));
-    assert.ok(!H.asksUser(''));
   });
 
   await test('新的 Stop 接手後，舊的等待結束', async () => {

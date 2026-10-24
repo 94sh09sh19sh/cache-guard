@@ -26,8 +26,7 @@ const DEFAULT_CONFIG = {
   maxUsagePct: 90,
   // 對話累積的圖片張數到這些門檻時各提醒一次
   imageWarnAt: [30, 50],
-  // 工作做完的 session 不保溫，只保溫還在等的：背景工作、計時器、等使用者回答（回覆最後一行是問句）
-  warmOnQuestion: true,
+  // 工作已做完的 session 不保溫，只保溫還在等背景工作或計時器的
   // Claude Code 自己的背景工作（background_tasks 的 type），不算在等
   ignoreTaskTypes: ['dream', 'auto-mode scan', 'memory import'],
   // Stop 後等多久才記下逐字稿位置當基準（Claude Code 收尾還會寫幾筆紀錄）、之後多久檢查一次

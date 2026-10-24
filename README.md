@@ -15,10 +15,9 @@
 
 ## 保溫規則
 - 只保溫上下文 ≥ 5 萬 token 的主對話；子代理不保溫。
-- 只保溫還在等的 session，工作已做完的不保溫。「在等」指以下任一種：
+- 只保溫還在等的 session；工作已做完、停下來問使用者的都不保溫。「在等」指以下任一種：
   - 背景工作還在跑：背景指令、背景子代理、Monitor、workflow、teammate 等（Stop hook 輸入的 `background_tasks`；Claude Code 自己的 dream、auto-mode scan、memory import 不算）。
   - 有計時器會叫醒它：ScheduleWakeup、CronCreate、`/loop`（`session_crons`）。
-  - 在等使用者回答：最後一則回覆的最後一行是問句（結尾是「？」或「?」）。
 - 使用者回來（正常的一輪）就重新計算；每段閒置最多 8 次，約 8 小時。Claude Code 的 Stop hook 連續接續上限也是 8。
 - 超額時快取只有 5 分鐘：改成 4 分鐘喚醒、最多 6 次（重寫 1.25 倍，保溫 6 次約 0.6 倍）。由最後一次回應的 `cache_creation` 自動判斷。
 - 不保溫的情況：等待期間逐字稿有新的對話紀錄（正在做事、背景工作完成後接手；Claude Code 閒置時自己寫的 `away_summary` 等 system 紀錄不算）、同一 session 又有新的 Stop 接手、醒來時快取已過期（例如電腦睡眠）、5 小時用量 ≥ 90%（讀 limit-relay 的用量檔；所有 session 都閒置時用量檔不會更新，但同一個 5 小時視窗內用量只增不減，所以舊值當下限照用，視窗重置後才歸零）、iter-chain 已開下一輪、limit-relay 已安排新 session 接手。
@@ -43,7 +42,6 @@
 - `wakeAfterSec5m`、`maxPings5m`：5 分鐘快取（預設 240、6）。
 - `maxUsagePct`：5 小時用量到多少就停（預設 90）。
 - `imageWarnAt`：圖片提醒門檻（預設 `[30, 50]`）。
-- `warmOnQuestion`：回覆最後一行是問句時要不要保溫（預設 true）。
 - `ignoreTaskTypes`：不算在等的背景工作類型（預設 `["dream", "auto-mode scan", "memory import"]`）。
 - `debug`：把 hook 輸入存到 `state/debug/`（圖片內容不存）。
 
@@ -61,6 +59,5 @@
 - 保溫那一輪會留在對話裡（一則系統提醒加一個「.」），每次約多 50 token。
 - 只對互動模式有用；`claude -p` 結束時背景 hook 會被終止。
 - 這一輪還沒結束的等待保不了溫：AskUserQuestion 的選項框、權限確認、前景子代理。這時 Stop 還沒觸發，Claude Code 也不會在工具等結果時送請求。
-- 判斷「在等」需要 Stop 輸入有 `background_tasks` 和 `session_crons`（2.1.310 已確認有）；舊版沒有這兩欄時，只剩問句判斷。
-- 問句判斷只看最後一行：回覆中間問、最後一行是陳述句的不算；反問句結尾也會被當成在等。
+- 判斷「在等」需要 Stop 輸入有 `background_tasks` 和 `session_crons`（2.1.310 已確認有）；舊版沒有這兩欄時一律不保溫。
 - 「快取被讀到就重新計時」是 Anthropic 目前的行為，不是保證；用 `report` 定期確認保溫後的請求真的讀到快取。
