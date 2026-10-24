@@ -8,5 +8,7 @@
   "maxPings5m": 6,
   "maxUsagePct": 90,
   "imageWarnAt": [30, 50],
+  "warmOnQuestion": true,
+  "ignoreTaskTypes": ["dream", "auto-mode scan", "memory import"],
   "debug": false
 }

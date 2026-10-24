@@ -12,6 +12,7 @@ const L = require('./lib');
 const H = require('./hook');
 const HOOK = path.join(__dirname, 'hook.js');
 const FAST = { baselineSec: 0.5, pollSec: 0.2 };
+const BG = { id: 'b1', type: 'shell', status: 'running', description: 'npm run build' };
 
 function transcript(name, { ageSec, ctx = 100000, tier = '1h' }) {
   const file = path.join(tmp, `${name}.jsonl`);
@@ -33,7 +34,8 @@ function run(input, cfg = {}) {
     child.stderr.on('data', (d) => (err += d));
     child.stdout.on('data', (d) => (out += d));
     child.on('exit', (code) => resolve({ code, err, out }));
-    child.stdin.end(JSON.stringify({ hook_event_name: 'Stop', ...input }));
+    // 預設有一個背景工作在跑（在等），測「工作已完成」時再把它清掉
+    child.stdin.end(JSON.stringify({ hook_event_name: 'Stop', background_tasks: [BG], ...input }));
   });
 }
 
@@ -91,8 +93,44 @@ async function test(name, fn) {
     const tp = transcript('busy', { ageSec: 3297 });
     const p = run({ session_id: 'busy', transcript_path: tp });
     await sleep(1200);
-    fs.appendFileSync(tp, '{"type":"user"}\n');
+    fs.appendFileSync(tp, JSON.stringify({ type: 'user', timestamp: new Date().toISOString() }) + '\n');
     assert.strictEqual((await p).code, 0);
+  });
+
+  await test('閒置時 Claude Code 自己寫的 away_summary、cost-state 不算有人回來', async () => {
+    const tp = transcript('away', { ageSec: 3297 });
+    const p = run({ session_id: 'away', transcript_path: tp });
+    await sleep(1200);
+    fs.appendFileSync(tp, [{ type: 'system', subtype: 'away_summary', timestamp: new Date().toISOString() }, { type: 'cost-state' }].map((l) => JSON.stringify(l)).join('\n') + '\n');
+    assert.strictEqual((await p).code, 2);
+  });
+
+  await test('工作已完成（沒有背景工作、計時器，也沒問問題）不保溫', async () => {
+    const r = await run({ session_id: 'done', transcript_path: transcript('done', { ageSec: 3298 }), background_tasks: [], session_crons: [], last_assistant_message: '已修好並推上 GitHub。' });
+    assert.strictEqual(r.code, 0);
+    assert.strictEqual(L.readJson(L.warmFile('done')).wait, null);
+    // Claude Code 內部的背景工作不算在等
+    const r2 = await run({ session_id: 'done', transcript_path: transcript('done', { ageSec: 3298 }), background_tasks: [{ ...BG, type: 'dream' }] });
+    assert.strictEqual(r2.code, 0);
+  });
+
+  await test('等計時器、等使用者回答都保溫', async () => {
+    const cron = await run({ session_id: 'cron', transcript_path: transcript('cron', { ageSec: 3298 }), background_tasks: [], session_crons: [{ id: 'c1', schedule: '0 9 * * *', recurring: true, prompt: 'x' }] });
+    assert.strictEqual(cron.code, 2, cron.err);
+    const tp = transcript('ask', { ageSec: 3298 });
+    const ask = await run({ session_id: 'ask', transcript_path: tp, background_tasks: [], last_assistant_message: '兩個做法。\n\n要我照這個方式改 `cache-guard` 嗎？' });
+    assert.strictEqual(ask.code, 2, ask.err);
+    // 保溫那一輪只回「.」，要沿用「等使用者回答」繼續保溫
+    const again = await run({ session_id: 'ask', transcript_path: tp, background_tasks: [], stop_hook_active: true, last_assistant_message: '.' });
+    assert.strictEqual(again.code, 2, again.err);
+    assert.strictEqual(L.readJson(L.warmFile('ask')).pings, 2);
+  });
+
+  await test('判斷問句：只看最後一行', () => {
+    assert.ok(H.asksUser('要我改嗎？'));
+    assert.ok(H.asksUser('Should I push?**'));
+    assert.ok(!H.asksUser('為什麼會這樣？\n\n已經修好了。'));
+    assert.ok(!H.asksUser(''));
   });
 
   await test('新的 Stop 接手後，舊的等待結束', async () => {

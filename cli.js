@@ -17,7 +17,7 @@ function status() {
   const rows = files.map((f) => ({ sid: f.slice(0, 8), ...L.readJson(path.join(L.SESSIONS, f), {}) })).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 10);
   for (const r of rows) {
     const img = L.readJson(L.imageFile(files.find((f) => f.startsWith(r.sid)).replace('.warm.json', '')), {}).count || 0;
-    console.log(`${r.sid}｜${new Date(r.updatedAt).toLocaleString()}｜${r.tier}｜上下文 ${L.kTok(r.ctx || 0)}｜本段已保溫 ${r.pings || 0} 次｜圖片 ${img} 張`);
+    console.log(`${r.sid}｜${new Date(r.updatedAt).toLocaleString()}｜${r.tier}｜上下文 ${L.kTok(r.ctx || 0)}｜${r.wait || '工作已完成，不保溫'}｜本段已保溫 ${r.pings || 0} 次｜圖片 ${img} 張`);
   }
 }
 

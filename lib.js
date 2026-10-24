@@ -26,7 +26,11 @@ const DEFAULT_CONFIG = {
   maxUsagePct: 90,
   // 對話累積的圖片張數到這些門檻時各提醒一次
   imageWarnAt: [30, 50],
-  // Stop 後等多久才記下逐字稿大小當基準（Claude Code 收尾還會寫幾筆紀錄）、之後多久檢查一次
+  // 工作做完的 session 不保溫，只保溫還在等的：背景工作、計時器、等使用者回答（回覆最後一行是問句）
+  warmOnQuestion: true,
+  // Claude Code 自己的背景工作（background_tasks 的 type），不算在等
+  ignoreTaskTypes: ['dream', 'auto-mode scan', 'memory import'],
+  // Stop 後等多久才記下逐字稿位置當基準（Claude Code 收尾還會寫幾筆紀錄）、之後多久檢查一次
   baselineSec: 20,
   pollSec: 15,
   debug: false,
@@ -111,7 +115,34 @@ const fileSize = (file) => {
   }
 };
 
-const isRealAssistant = (r) => r.type === 'assistant' && !r.isSidechain && r.message?.usage && r.message.model !== '<synthetic>';
+// 逐字稿從 offset 之後有沒有真的對話紀錄。Claude Code 閒置時也會自己寫 system 紀錄（離開約 3 分鐘後的 away_summary 等）
+// 和沒有時間的狀態紀錄（cost-state、ai-title 等），這些不代表有人在用
+function hasActivitySince(file, offset) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    if (size <= offset) return false;
+    const buf = Buffer.alloc(size - offset);
+    fs.readSync(fd, buf, 0, buf.length, offset);
+    return buf.toString('utf8').split('\n').some((line) => {
+      if (!line.trim()) return false;
+      try {
+        const r = JSON.parse(line);
+        return Boolean(r.timestamp) && r.type !== 'system';
+      } catch {
+        // 還沒寫完的半行：等下一次檢查再看
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+const isRealAssistant =(r) => r.type === 'assistant' && !r.isSidechain && r.message?.usage && r.message.model !== '<synthetic>';
 
 function contextTokens(u) {
   return (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
@@ -160,5 +191,5 @@ const kTok = (n) => `${Math.round(n / 1000)}k`;
 module.exports = {
   ROOT, STATE, SESSIONS, LOG_FILE, TRY_FILE, DEFAULT_CONFIG,
   readJson, writeJson, loadConfig, log, readStdin, warmFile, imageFile,
-  tailRecords, fileSize, isRealAssistant, contextTokens, lastRequest, usagePct, handedOff, kTok,
+  tailRecords, fileSize, hasActivitySince, isRealAssistant, contextTokens, lastRequest, usagePct, handedOff, kTok,
 };

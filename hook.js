@@ -8,6 +8,23 @@ const TRY_MSG = 'cache-guard 喚醒測試（不是使用者訊息）：asyncRewa
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// 回覆最後一行是問句，代表在等使用者決定
+function asksUser(text) {
+  const lines = String(text || '').trim().split('\n');
+  return /[?？]$/.test(lines[lines.length - 1].replace(/[\s*_`」』）)]+$/, ''));
+}
+
+// 這個 session 還在等什麼；工作已做完回傳 null。Stop 的輸入直接列出進行中的背景工作與排程
+function waitReason(input, prev, isPing, cfg) {
+  const tasks = (input.background_tasks || []).filter((t) => !cfg.ignoreTaskTypes.includes(t.type));
+  if (tasks.length) return `等背景工作（${[...new Set(tasks.map((t) => t.type))].join('、')}）`;
+  if ((input.session_crons || []).length) return '等計時器';
+  if (cfg.warmOnQuestion && asksUser(input.last_assistant_message)) return '等使用者回答';
+  // 保溫那一輪只回「.」，看不出原本在等什麼，沿用上一輪的判斷
+  if (isPing && prev.wait === '等使用者回答') return prev.wait;
+  return null;
+}
+
 // Stop 後在背景等到快取快過期，期間沒有新動靜就用 exit 2 喚醒 session 讀一次快取
 async function onStop(input, cfg) {
   if (!cfg.keepWarm || input.agent_id) return 0;
@@ -24,13 +41,14 @@ async function onStop(input, cfg) {
   const isPing = Boolean(prev.wokeAt) && Date.now() - prev.wokeAt < 10 * 60e3 && (input.stop_hook_active || reply.length <= 20);
   const pings = isPing ? prev.pings || 0 : 0;
   const owner = `${process.pid}-${Date.now()}`;
-  const st = { owner, tier, pings, wokeAt: isPing ? prev.wokeAt : 0, anchor: last.anchor, ctx: last.ctx, updatedAt: Date.now() };
+  const wait = waitReason(input, prev, isPing, cfg);
+  const st = { owner, tier, pings, wokeAt: isPing ? prev.wokeAt : 0, anchor: last.anchor, ctx: last.ctx, wait, updatedAt: Date.now() };
   L.writeJson(L.warmFile(sid), st);
 
   const trial = L.readJson(L.TRY_FILE);
   const isTrial = Boolean(trial && trial.expiresAt > Date.now());
   if (!isTrial) {
-    if (last.ctx < cfg.minContextTokens) return 0;
+    if (last.ctx < cfg.minContextTokens || !wait) return 0;
     const max = tier === '5m' ? cfg.maxPings5m : cfg.maxPings1h;
     const skip = pings >= max ? `已保溫 ${pings} 次，達上限` : L.handedOff(sid);
     if (skip) {
@@ -45,7 +63,10 @@ async function onStop(input, cfg) {
   const base = L.fileSize(tp);
   for (;;) {
     if (L.readJson(L.warmFile(sid), {}).owner !== owner) return 0;
-    if (L.fileSize(tp) !== base) return 0;
+    if (L.hasActivitySince(tp, base)) {
+      if (!isTrial) L.log(`${tag} 等待中有新對話，不保溫`);
+      return 0;
+    }
     const left = wakeAt - Date.now();
     if (left <= 0) break;
     await sleep(Math.min(left, cfg.pollSec * 1000));
@@ -69,7 +90,7 @@ async function onStop(input, cfg) {
     return 2;
   }
   L.writeJson(L.warmFile(sid), { ...st, pings: pings + 1, wokeAt: Date.now(), updatedAt: Date.now() });
-  L.log(`${tag} 保溫第 ${pings + 1} 次（${tier} 快取，上下文 ${L.kTok(last.ctx)}）`);
+  L.log(`${tag} 保溫第 ${pings + 1} 次（${wait}，${tier} 快取，上下文 ${L.kTok(last.ctx)}）`);
   process.stderr.write(WAKE_MSG);
   return 2;
 }
@@ -138,4 +159,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { countImages, onPostToolUse, WAKE_MSG };
+module.exports = { countImages, onPostToolUse, asksUser, waitReason, WAKE_MSG };
