@@ -129,11 +129,11 @@ function lastRequest(records) {
   return { anchor: req ? Date.parse(req.timestamp) : at - 5 * 60e3, ctx: contextTokens(u), tier };
 }
 
-// limit-relay 的用量檔：沒裝或太舊就當不知道
+// limit-relay 的用量檔：所有 session 都閒置時不會更新，所以不看新舊，改用同一個 5 小時視窗內的下限；沒裝就當不知道
 function usagePct() {
   try {
-    const u = require('../limit-relay/lib').loadUsage();
-    return typeof u?.five_hour?.used === 'number' ? u.five_hour.used : null;
+    const f = require('../limit-relay/lib').usageFloor();
+    return typeof f?.used === 'number' ? f.used : null;
   } catch {
     return null;
   }
